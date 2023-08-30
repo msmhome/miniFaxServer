@@ -81,4 +81,4 @@ if __name__ == "__main__":
     load_dotenv()
     telnyx.api_key = os.getenv("TELNYX_API_KEY")
     telnyx.public_key = os.getenv("TELNYX_PUBLIC_KEY")
-    uvicorn.run(app, host='192.168.1.196', port=58000, log_level='info', ssl_keyfile='certs/key.pem', ssl_certfile='certs/cert.pem')
+    uvicorn.run(app, host='os.getenv("HOST")', port='os.getenv("PORT")', log_level='info', ssl_keyfile='certs/key.pem', ssl_certfile='certs/cert.pem')
