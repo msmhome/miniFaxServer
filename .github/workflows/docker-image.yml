@@ -31,7 +31,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/msmhome/minifaxserver, msmhome/minifaxserver
+          images: ghcr.io/msmhome/minifaxserver
           tags: |
             type=raw,value=develop,priority=900,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
             type=ref,enable=true,priority=600,prefix=pr-,suffix=,event=pr
