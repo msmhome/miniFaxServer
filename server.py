@@ -152,6 +152,9 @@ class FaxEventHandler(FileSystemEventHandler):
     def __init__(self):
         super().__init__()
         self.fax_id_to_file = {}
+        # Root is needed to own the files in docker so that if upload via network share, the container can process the file from multiple users.
+        self.user_id = 0
+        self.group_id = 0
 
     def on_created(self, event):
         print(f"Event detected: {event}")
@@ -160,11 +163,28 @@ class FaxEventHandler(FileSystemEventHandler):
         if event.event_type == 'created' and event.src_path.endswith('.pdf'):
             self.process_fax(event.src_path)
 
+    def on_moved(self, event):
+        print(f"Event detected: {event}")
+        if event.is_directory:
+            return
+        if event.event_type == 'moved' and event.dest_path.endswith('.pdf'):
+            self.process_fax(event.dest_path)
+
     def process_fax(self, file_path):
         print(f"Processing fax for file: {file_path}")
         file_name = os.path.basename(file_path)
         fax_number = os.path.splitext(file_name)[0]  # Extract fax number from file name
         self.send_fax(file_path, fax_number)
+        # Change ownership of the file to root
+        try:
+            os.chown(file_path, self.user_id, self.group_id)
+            print(f"Changed ownership of {file_path} to user {self.user_id} and group {self.group_id}")
+        except OSError as e:
+            print(f"Failed to change ownership of {file_path}: {e}")
+            
+    def set_user_group_ids(self, user_id, group_id):
+        self.user_id = user_id
+        self.group_id = group_id
 
     def send_fax(self, file_path, fax_number, on_success_callback=None):
         print(f"Sending fax to {fax_number} for file: {file_path}")
