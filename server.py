@@ -19,7 +19,6 @@ import bleach
 import json
 import logging
 import shutil
-import ipaddress
 
 #TODO: Create inbound_faces and inbound_sms directories. 
 #TODO: Append phone number to inbound and outbound final fax PDF files. similar to SMS
@@ -31,32 +30,6 @@ app = FastAPI()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.mount("/static/outbound", StaticFiles(directory="Faxes/outbound"), name="static") # mount outbound faxes directory to webserver
-
-# Read and process whitelisted IP ranges from environment variable
-WHITELISTED_IP_RANGES_STR = os.getenv('WHITELISTED_IP_RANGES')
-if WHITELISTED_IP_RANGES_STR is None:
-    raise ValueError("WHITELISTED_IP_RANGES environment variable is not set")
-try:
-    # Ensure the string is correctly formatted for JSON
-    WHITELISTED_IP_RANGES_STR = WHITELISTED_IP_RANGES_STR.strip().replace("'", '"')
-    print(f"Formatted WHITELISTED_IP_RANGES_STR: '{WHITELISTED_IP_RANGES_STR}'")
-
-    WHITELISTED_IP_RANGES = [ipaddress.ip_network(ip) for ip in json.loads(WHITELISTED_IP_RANGES_STR)]
-    print(f"Parsed WHITELISTED_IP_RANGES: {WHITELISTED_IP_RANGES}")
-except json.JSONDecodeError as e:
-    raise ValueError(f"Error decoding WHITELISTED_IP_RANGES: {e}")
-
-def is_whitelisted(ip):
-    ip_address = ipaddress.ip_address(ip)
-    return any(ip_address in network for network in WHITELISTED_IP_RANGES)
-
-@app.middleware("http")
-async def whitelist_middleware(request: Request, call_next):
-    client_ip = request.client.host
-    if not is_whitelisted(client_ip):
-        return Response(status_code=403, content="Forbidden")
-    response = await call_next(request)
-    return response
 
 # Configure logging
 logging.basicConfig(level=logging.INFO) #TODO: Add debug logging level, make it put all HTTP requests in/out raw

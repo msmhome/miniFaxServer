@@ -9,4 +9,3 @@ telnyx==2.1.2
 uvicorn==0.25.0
 watchdog==3.0.0
 Werkzeug==3.0.1
-ipaddress==1.0.23
