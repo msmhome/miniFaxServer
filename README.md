@@ -4,7 +4,7 @@ VERSION 2 WIP BRANCH
 
 A tiny, ready to deploy, simple Python fax send/recieve and SMS receive server running using Telynx Programmable Fax API.
 
-# Usuage 
+# Usage 
 miniFaxServer revolves around the /Faxes directory. Faxes and SMS messages recieved are dumped there in encoded .pdf or .txt files respectively. It's useful to deploy this on a NAS and use a network file share, or run on docker desktop with a host path directory mounted.  
 
 Recommended to be deployed through a cloudflare tunnel. 
