@@ -18,7 +18,7 @@ import uvicorn
 import bleach
 import json
 import logging
-#import shutil
+import shutil
 
 #TODO: Create inbound_faces and inbound_sms directories. 
 #TODO: Append phone number to inbound and outbound final fax PDF files. similar to SMS
@@ -216,7 +216,7 @@ class FaxEventHandler(FileSystemEventHandler):
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
 
         try:
-            os.rename(file_path, new_file_path)
+            shutil.move(file_path, new_file_path)
             print(f"Moved confirmed fax to {new_file_path}")
         except Exception as e:
             print(f"Failed to move file for fax {confirmation_number}: {str(e)}")
