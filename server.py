@@ -22,7 +22,7 @@ import shutil
 import ipaddress
 
 #TODO: Create inbound_faxes and inbound_sms directories. 
-#TODO: Append phone number to inbound and outbound final fax PDF files. similar to SMS
+#TODO: Append phone number and timestamp to inbound and outbound final fax PDF files . similar to SMS
 
 
 # Initialize FastAPI with rate limiter
@@ -33,7 +33,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.mount("/static/outbound", StaticFiles(directory="Faxes/outbound"), name="static") # mount outbound faxes directory to webserver
 
 # Configure logging
-logging.basicConfig(level=logging.INFO) #TODO: Add debug logging level, make it put all HTTP requests in/out raw
+#TODO: Add debug logging level, make it put all HTTP requests in/out raw
+#TODO: Standardize logging messages, include timestamp, type, direction, phone numbers, and file. 
+logging.basicConfig(level=logging.INFO)
 
 # Read and process whitelisted IP ranges from environment variable
 WHITELISTED_IP_RANGES_STR = os.getenv('WHITELISTED_IP_RANGES')
