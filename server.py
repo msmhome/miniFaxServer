@@ -61,7 +61,6 @@ async def whitelist_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
-
 # Formatting
 class FaxData(BaseModel):
     event_type: str

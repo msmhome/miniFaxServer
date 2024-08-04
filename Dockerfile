@@ -1,6 +1,7 @@
 FROM python:3.12.4-slim-bookworm
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
 
 RUN apt-get update && \
     apt-get install -y wget ca-certificates && \
@@ -22,6 +23,6 @@ COPY requirements.txt .
 COPY entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh
-RUN pip install -r requirements.txt 
+RUN pip install --no-cache-dir -r requirements.txt 
 
 ENTRYPOINT ["/entrypoint.sh"]
