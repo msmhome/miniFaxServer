@@ -1,6 +1,6 @@
 # miniFaxServer (WIP V2 Branch)
 
-<img align="right" width="425" height="425" src="https://i.imgur.com/pCU81k6.png">
+<img align="right" width="400" height="400" src="https://i.imgur.com/pCU81k6.png">
 
 A tiny, ready to deploy, simple fax and SMS recieve server running on the Telynx Programmable Fax and SMS APIs. This is built around my use case and homelab but is versatile to be deployed as-is for yours or be used in something more complex. This has not been tested at scale and outside of my personal at-home use, while it relies on Telnyx to do most of the work, as with all FOSS, no guarantees are made.
 
