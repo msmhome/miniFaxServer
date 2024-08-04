@@ -21,9 +21,7 @@ import logging
 import shutil
 import ipaddress
 
-#TODO: Create inbound_faxes and inbound_sms directories. 
-#TODO: Append phone number and timestamp to inbound and outbound final fax PDF files . similar to SMS
-
+#TODO: Append phone number and timestamp to inbound and outbound final fax PDF files. similar to SMS
 
 # Initialize FastAPI with rate limiter
 limiter = Limiter(key_func=get_remote_address)
@@ -36,6 +34,7 @@ app.mount("/static/outbound", StaticFiles(directory="Faxes/outbound"), name="sta
 #TODO: Add debug logging level, make it put all HTTP requests in/out raw
 #TODO: Standardize logging messages, include timestamp, type, direction, phone numbers, and file. 
 logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 # Read and process whitelisted IP ranges from environment variable
 WHITELISTED_IP_RANGES_STR = os.getenv('WHITELISTED_IP_RANGES')
@@ -44,11 +43,22 @@ if WHITELISTED_IP_RANGES_STR is None:
 try:
     # Ensure the string is correctly formatted for JSON
     WHITELISTED_IP_RANGES_STR = WHITELISTED_IP_RANGES_STR.strip().replace("'", '"')
-    print(f"Formatted WHITELISTED_IP_RANGES_STR: '{WHITELISTED_IP_RANGES_STR}'")
+    ip_ranges = json.loads(WHITELISTED_IP_RANGES_STR)
+    WHITELISTED_IP_RANGES = []
+    for ip in ip_ranges:
+        try:
+            WHITELISTED_IP_RANGES.append(ipaddress.ip_network(ip))
+        except ValueError as e:
+            print(f"[ERROR]:Invalid IP range '{ip}' skipped: {e}")
+    print(f"Parsed Whitelisted IP ranges: {WHITELISTED_IP_RANGES}")
+    logging.debug(f"Parsed WHITELISTED_IP_RANGES: {WHITELISTED_IP_RANGES}")
 
-    WHITELISTED_IP_RANGES = [ipaddress.ip_network(ip) for ip in json.loads(WHITELISTED_IP_RANGES_STR)]
-    print(f"Parsed WHITELISTED_IP_RANGES: {WHITELISTED_IP_RANGES}")
+except ipaddress.AddressValueError as e:
+    logging.debug(f"Unable to properly read whitelisted IP ranges. Are they set in environment and in proper JSON? {e}")
+    raise ValueError(f"Error decoding WHITELISTED_IP_RANGES: {e}")
+
 except json.JSONDecodeError as e:
+    logging.debug(f"Unable to properly read whitelisted IP ranges. Are they set in environment and in proper JSON? {e}")
     raise ValueError(f"Error decoding WHITELISTED_IP_RANGES: {e}")
 
 def is_whitelisted(ip):
@@ -63,7 +73,7 @@ async def whitelist_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
-# Formatting
+# Formatting for Fax In
 class FaxData(BaseModel):
     event_type: str
     direction: str
@@ -72,11 +82,11 @@ class FaxData(BaseModel):
     from_: str = Field(alias="from")
     media_url: str
 
+#Formatting for SMS In
 def sanitize_and_store(message: str, from_number: str, directory="Faxes"):
     sanitized_message = bleach.clean(message, strip=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')  # Using microseconds for uniqueness
     file_name = f"SMS_from_{from_number}_at_{timestamp}.txt"
-
     os.makedirs(directory, exist_ok=True)  # Ensure the directory exists
 
     file_path = os.path.join(directory, file_name)
@@ -88,6 +98,7 @@ def sanitize_and_store(message: str, from_number: str, directory="Faxes"):
 class SmsData(BaseModel):
     data: dict
 
+#Sanitize and format Fax In File
 def download_file(url, save_directory='Faxes'):
     # Checking if the url is valid
     try:
@@ -123,6 +134,7 @@ async def handle_sms(data: SmsData):
         from_number = data.data.get('payload').get('from').get('phone_number')
         sanitized_message = sanitize_and_store(message, from_number)
         print(f"Received an SMS from {from_number}: {sanitized_message}")
+        logging.debug(f"Received an SMS from {from_number}: {'message.payload'}")
         return Response(status_code=200)
     except KeyError:
         print("Incorrect data format received.")
@@ -241,9 +253,7 @@ class FaxEventHandler(FileSystemEventHandler):
             return
         file_path = os.path.join('Faxes/outbound', original_file_name)
         new_file_name = f"{faxed_to}_{confirmation_number}_confirmed.pdf"
-        # new_file_path = os.path.join('Faxes/outbound/confirmations', new_file_name)
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
-
         try:
             shutil.move(file_path, new_file_path)
             print(f"Moved confirmed fax to {new_file_path}")

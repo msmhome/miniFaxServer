@@ -59,7 +59,7 @@ Also, set the `TUNNEL_TOKEN` environment variable for the container with your Cl
 
 ### Cloudflare Tunnels (cloudflared)
 
-Cloudflared is built in and recommended instead of an open port. Enable `Disable Chunked Encoding`. 
+Cloudflared is built in and recommended instead of an open port. Set `Disable Chunked Encoding` to on. 
 
 It's also recommended to get an origin server certificate and save the certificate and private key to `Faxes/certs/certificate.pem` and `Faxes/certs/key.pem`, respectively. Make sure to set your cloudflare tunnel configuration as HTTPS and set the origin server name.  
 
