@@ -18,6 +18,7 @@ and need to set the following container environment variable:
 TUNNEL_TOKEN=cloudflare_tunnel_token_here
 
 Recommended to be deployed through a cloudflare tunnel. 
+Try host 0.0.0.0 if you encounter problems with whitelist.
 
 Add your own IP ranges in the .env whitelist, the default entries are for Telnyx's servers and should not be changed. 
 
