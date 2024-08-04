@@ -4,10 +4,22 @@ VERSION 2 WIP BRANCH
 
 A tiny, ready to deploy, simple Python fax send/recieve and SMS receive server running using Telynx Programmable Fax API.
 
-# Usuage 
+# Usage 
 miniFaxServer revolves around the /Faxes directory. Faxes and SMS messages recieved are dumped there in encoded .pdf or .txt files respectively. It's useful to deploy this on a NAS and use a network file share, or run on docker desktop with a host path directory mounted.  
 
+Need to mount the following host paths:
+.env  /app/.env (read only)
+certs/  /app/certs/ (read only)
+Faxes/  /app/Faxes/
+Faxes/outbound/  /app/Faxes/outbound
+Faxes/outbound_confirmations/  /app/Faxes/outbound_confirmations
+
+and need to set the following container environment variable:
+TUNNEL_TOKEN=cloudflare_tunnel_token_here
+
 Recommended to be deployed through a cloudflare tunnel. 
+
+Add your own IP ranges in the .env whitelist, the default entries are for Telnyx's servers and should not be changed. 
 
 ## Fax In
 Faxes recieved will be saved as a PDF in the Faxes directory with the name 'from_+12015550000_telnyx-delivery-webhook-id.pdf`
@@ -23,6 +35,7 @@ Put any PDF files to be sent out in the Faxes/outbound directory named as the de
 SMS must be configured in the Telnyx webui and the webhook must point /sms. Your inbound texts will be saved in the Faxes directory as SMS_from_+12015550000_at_timestamp.txt
 
 
+# Resources
 Need to test your fax set up? 
 Try the Canon Test Fax Service at +18553922666 (https://community.usa.canon.com/t5/Desktop-Inkjet-Printers/G7020-FAX/m-p/295192/highlight/true#M17767). This has better uptime than HP's fax test service, and replies faster. 
 
