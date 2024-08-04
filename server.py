@@ -93,7 +93,7 @@ def download_file(url, save_directory='Faxes'):
         split_url[1] = secure_filename(split_url[1])
         url = urlunsplit(split_url)
         url = url.replace("%2B", "+")
-        r = requests.get(url, allow_redirects=True)
+        r = requests.get(url, allow_redirects=True, timeout=30)
         file_name = secure_filename(os.path.basename(urlparse(url).path)) # secure the filename
         os.makedirs(save_directory, exist_ok=True)
         file_path = os.path.join(save_directory, file_name)
@@ -212,7 +212,7 @@ class FaxEventHandler(FileSystemEventHandler):
         }
 
         url = "https://api.telnyx.com/v2/faxes"
-        response = requests.post(url, json=payload, headers=headers)
+        response = requests.post(url, json=payload, headers=headers, timeout=900) # change timeout value if you have larger faxes def. 15 minutes
 
         print(f"Fax send response: {response.status_code}, {response.content}")
         if response.status_code in [200, 202]:
