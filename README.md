@@ -22,8 +22,6 @@ miniFaxServer revolves around the /Faxes directory. Faxes and SMS messages recie
 
 Add your own IP ranges in the .env whitelist, the default entries are for Telnyx's servers and should not be changed. Try host 0.0.0.0 if you encounter problems with whitelist.
 
-#### [Please submit issues here.](https://github.com/msmhome/miniFaxServer/issues)
-
 #### Fax In
 
 Faxes recieved will be saved as a PDF in the Faxes directory with the name `from_+12015550000_telnyx-delivery-webhook-id.pdf`.
@@ -39,6 +37,8 @@ Put any PDF files to be sent out in the Faxes/outbound directory named as the de
 #### SMS In
 
 SMS must be configured in the Telnyx webui and the webhook must point /sms. Your inbound texts will be saved in the Faxes directory as `SMS_from_+12015550000_at_timestamp.txt`.
+
+#### [Please submit issues here.](https://github.com/msmhome/miniFaxServer/issues)
 
 ## Docker Container
 
