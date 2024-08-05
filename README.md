@@ -7,7 +7,7 @@ A tiny, ready to deploy, simple fax and SMS receive server running on the Telynx
 This is built around my use case and homelab but is versatile to be deployed as-is for yours or be used in something more complex.
 *   **Fax Inbound and Outbound w/ Confirmations**
 *   **IP Whitelist With Telnyx IP Ranges by Default**
-*   [**Docker Image**](https://github.com/msmhome/miniFaxServer/pkgs/container/minifaxserver/252967649?tag=main) **with Cloudflare Tunnels (cloudflared)**
+*   [**Docker Image**](https://github.com/msmhome/miniFaxServer/pkgs/container/minifaxserver/252967649?tag=main) **with Cloudflare Tunnels built in**
 *   **Lightweight, Simple, No Web UI**
 *   **HTTPS Support**
 *   **PDF Faxes, TXT SMS Files**

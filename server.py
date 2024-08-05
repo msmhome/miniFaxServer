@@ -5,7 +5,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, Request, Depends
 from starlette.responses import Response
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -28,11 +28,14 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.mount("/static/outbound", StaticFiles(directory="Faxes/outbound"), name="static") # mount outbound faxes directory to webserver
 
+# Determine the log level from environment variable or default to error
+log_level_str = os.getenv('LOG_LEVEL', 'ERROR').upper()
+log_level = getattr(logging, log_level_str, logging.DEBUG)
+
 # Configure logging
-#TODO: Add debug logging level, make it put all HTTP requests in/out raw
-#TODO: Standardize logging messages, include timestamp, type, direction, phone numbers, and file. 
-logging.basicConfig(level=logging.INFO)
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')  # Using microseconds for uniqueness
 
 # Read and process whitelisted IP ranges from environment variable
@@ -48,16 +51,16 @@ try:
         try:
             WHITELISTED_IP_RANGES.append(ipaddress.ip_network(ip))
         except ValueError as e:
-            print(f"[ERROR]:Invalid IP range '{ip}' skipped: {e}")
-    print(f"Parsed Whitelisted IP ranges: {WHITELISTED_IP_RANGES}")
-    logging.debug(f"Parsed WHITELISTED_IP_RANGES: {WHITELISTED_IP_RANGES}")
+            logger.error(f"[ERROR]:Invalid IP range '{ip}' skipped: {e}")
+    # print(f"Parsed Whitelisted IP ranges: {WHITELISTED_IP_RANGES}")
+    logger.debug(f"Parsed WHITELISTED_IP_RANGES: {WHITELISTED_IP_RANGES}")
 
 except ipaddress.AddressValueError as e:
-    logging.debug(f"Unable to properly read whitelisted IP ranges. Are they set in environment and in proper JSON? {e}")
+    logger.debug(f"Unable to properly read whitelisted IP ranges. Are they set in environment and in proper JSON? {e}")
     raise ValueError(f"Error decoding WHITELISTED_IP_RANGES: {e}")
 
 except json.JSONDecodeError as e:
-    logging.debug(f"Unable to properly read whitelisted IP ranges. Are they set in environment and in proper JSON? {e}")
+    logger.debug(f"Unable to properly read whitelisted IP ranges. Are they set in environment and in proper JSON? {e}")
     raise ValueError(f"Error decoding WHITELISTED_IP_RANGES: {e}")
 
 def is_whitelisted(ip):
@@ -110,7 +113,7 @@ def download_file(from_number, url, save_directory='Faxes'):
         open(file_path, "wb").write(r.content)
         return file_path
     except Exception as e:
-        print(f"An error occurred while downloading the file: {e}")
+        logger.error(f"An error occurred while downloading the fax file: {e}")
         return None
 
 
@@ -131,13 +134,13 @@ async def handle_sms(data: SmsData):
         from_number = data.data.get('payload').get('from').get('phone_number')
         sanitized_message = sanitize_and_store(message, from_number)
         print(f"Received an SMS from {from_number}: {sanitized_message}")
-        logging.debug(f"Received an SMS from {from_number}: {'message.payload'}")
+        logger.debug(f"Received an SMS from {from_number}: {'message.payload'}")
         return Response(status_code=200)
     except KeyError:
-        print("Incorrect data format received.")
+        logger.error("Incorrect incoming SMS data format received.")
         return Response(status_code=400)
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logger.error(f"An error occurred: {e}")
         return Response(status_code=500)
 
 @app.post("/telnyx-webhook")
@@ -153,36 +156,37 @@ async def inbound_message(request: Request):
 
         if event_type == "fax.delivered":
             faxed_to = body["data"]["payload"]["to"]
-            print(f"Received delivery confirmation for fax ID: {fax_id}")
+            print(f"Fax ID {fax_id} delivered to {faxed_to} at {timestamp}")
+            logger.debug(f"Received delivery confirmation for fax ID: {fax_id}")
             # Call on_confirmed with the fax_id received from the webhook
             event_handler.on_confirmed(faxed_to, fax_id)
         elif event_type == "fax.failed":
             failure_reason = body["payload"].get("failure_reason")
-            print(f"Fax failed with reason: {failure_reason}")
-            # Handle the failure case as needed
-        else:
-            print(f"Unhandled event type: {event_type}")
+            logger.error(f"Fax failed with reason: {failure_reason}")
+        # else:
+        #     logger.error(f"Unhandled event type: {event_type}")
 
         if event_type != "fax.received" or direction != "inbound":
             failure_reason = body["data"]["payload"].get("failure_reason")
             if failure_reason:
-                print(f"Fax failed due to: {failure_reason}")
-            print(f"Received fax event_type: {event_type} to {direction} fax_id: {fax_id}")
+                logger.error(f"Fax failed due to: {failure_reason}")
+            # print(f"Received fax event_type: {event_type} to {direction} fax_id: {fax_id}")
+            logger.debug(f"Received fax event_type: {event_type} to {direction} fax_id: {fax_id}")
             return Response(status_code=200)
         to_number = body["data"]["payload"]["to"]
         from_number = body["data"]["payload"]["from"]
         media_url = body["data"]["payload"]["media_url"]
         attachment = download_file(from_number,media_url)
         if attachment is None:
-            print(f"Failed to download fax with id: {fax_id} from {from_number} to {to_number}")
+            logger.error(f"Failed to download fax with id: {fax_id} from {from_number} to {to_number}")
             return Response(status_code=500)
-        print(f"Downloaded fax with id: {fax_id} from {from_number} to {to_number}")
+        print(f"Received incoming fax with id: {fax_id} from {from_number} to {to_number}")
         return Response(status_code=200)
     except KeyError:
-        print("Incorrect data format received.")
+        logger.error("Incorrect data format received.")
         return Response(status_code=400)
     except Exception as e:
-        print(f"Error processing webhook: {str(e)}")
+        logger.error(f"Error processing webhook: {str(e)}")
         return Response(status_code=500)
     
 
@@ -192,17 +196,17 @@ class FaxEventHandler(FileSystemEventHandler):
         self.fax_id_to_file = {}
 
     def on_created(self, event):
-        print(f"Event detected: {event}")
+        logger.debug(f"Event detected: {event}")
         if event.is_directory:
             return
         if event.event_type == 'created' and event.src_path.endswith('.pdf'):
-            print(f"Processing fax for file: {event.src_path}")
+            logger.debug(f"Processing fax for file: {event.src_path}")
             file_name = os.path.basename(event.src_path)
             fax_to = os.path.splitext(file_name)[0]  # Extract fax number from file name
             self.send_fax(event.src_path, fax_to)
 
     def send_fax(self, file_path, fax_number):
-        print(f"Sending fax file: {file_path} to {fax_number}")
+        print(f"Faxing file {file_path} to {fax_number}")
         file_name = os.path.basename(file_path)
         media_url = f"{os.getenv('MEDIA_BASE_URL')}/outbound/{file_name}"
         try:
@@ -214,23 +218,23 @@ class FaxEventHandler(FileSystemEventHandler):
                 t38_enabled=True,
                 to="+1" + fax_number
             )
-            print(f"Sent fax with fax_id: {fax_response.id}")
+            logger.debug(f"Sent fax with fax_id: {fax_response.id} to server")
             self.fax_id_to_file[fax_response.id] = file_name  # Store the mapping of fax_id to file_name
-            print(f"Stored mapping: {fax_response.id} -> {file_name}")
+            logger.debug(f"Stored mapping: {fax_response.id} -> {file_name}")
             new_file_path = os.path.join('Faxes', 'outbound_confirmations', f"{fax_response.id}.pdf")
             os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
             # Store the mapping of fax_id to file_name
             self.fax_id_to_file[fax_response.id] = file_name
-            print(f"Fax sent successfully: {fax_response}")
+            logger.debug(f"Fax sent successfully: {fax_response}")
         except Exception as e:
-                print(f"Failed to send fax: {str(e)}")
+                logger.error(f"Failed to send fax: {str(e)}")
 
     def on_confirmed(self, faxed_to, confirmation_number):
-        print(f"On confirmed called for confirmation number: {confirmation_number}")
+        logger.debug(f"On confirmed file move called for confirmation number: {confirmation_number}")
         # Retrieve the original file name using the fax_id
         original_file_name = self.fax_id_to_file.get(confirmation_number)
         if not original_file_name:
-            print(f"No mapping found for confirmation number: {confirmation_number}")
+            logger.error(f"No mapping found for confirmation number: {confirmation_number}")
             return
         file_path = os.path.join('Faxes/outbound', original_file_name)
         new_file_name = f"Fax_{confirmation_number[:5]}_to_{faxed_to}_at_{timestamp}_confirmed.pdf"
@@ -239,7 +243,7 @@ class FaxEventHandler(FileSystemEventHandler):
             shutil.move(file_path, new_file_path)
             print(f"Moved confirmed fax to {new_file_path}")
         except Exception as e:
-            print(f"Failed to move file for fax {confirmation_number}: {str(e)}")
+            logger.error(f"Failed to move file for fax {confirmation_number}: {str(e)}")
 
 if __name__ == "__main__":
     load_dotenv()
@@ -255,4 +259,4 @@ if __name__ == "__main__":
     observer.start()
 
     # Start the FastAPI app
-    uvicorn.run(app, host=str(os.getenv("HOST")), port=int(os.getenv("PORT")), log_level='info', ssl_keyfile='certs/key.pem', ssl_certfile='certs/cert.pem')
+    uvicorn.run(app, host=str(os.getenv("HOST")), port=int(os.getenv("PORT")), log_level=(os.getenv('LOG_LEVEL', 'ERROR').lower()), ssl_keyfile='certs/key.pem', ssl_certfile='certs/cert.pem')
