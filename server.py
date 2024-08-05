@@ -5,7 +5,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request
 from starlette.responses import Response
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -36,7 +36,7 @@ log_level = getattr(logging, log_level_str, logging.DEBUG)
 logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')  # Using microseconds for uniqueness
+timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # Using seconds for uniqueness
 
 # Read and process whitelisted IP ranges from environment variable or use default
 WHITELISTED_IP_RANGES_STR = os.getenv('WHITELISTED_IP_RANGES')
@@ -145,7 +145,7 @@ async def handle_sms(data: SmsData):
         return Response(status_code=500)
 
 @app.post("/telnyx-webhook")
-@limiter.limit("100/minute")
+@limiter.limit("100/minute") #Set webhook rate limit
 async def inbound_message(request: Request):
     try:
         body = await request.json()
