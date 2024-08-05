@@ -84,7 +84,6 @@ class FaxData(BaseModel):
 #Formatting for SMS In
 def sanitize_and_store(message: str, from_number: str, directory="Faxes"):
     sanitized_message = bleach.clean(message, strip=True)
-    # timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')  # Using microseconds for uniqueness
     file_name = f"SMS_from_{from_number}_at_{timestamp}.txt"
     os.makedirs(directory, exist_ok=True)  # Ensure the directory exists
     file_path = os.path.join(directory, file_name)
@@ -105,7 +104,7 @@ def download_file(from_number, url, save_directory='Faxes'):
         url = urlunsplit(split_url)
         url = url.replace("%2B", "+")
         r = requests.get(url, allow_redirects=True, timeout=30)
-        file_name = f"Fax_from_{from_number}_at_{timestamp}_{secure_filename(os.path.basename(urlparse(url).path)[:5])}.pdf" # secure the filename
+        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{from_number}_at_{timestamp}.pdf" # secure the filename
         os.makedirs(save_directory, exist_ok=True)
         file_path = os.path.join(save_directory, file_name)
         open(file_path, "wb").write(r.content)
@@ -234,7 +233,7 @@ class FaxEventHandler(FileSystemEventHandler):
             print(f"No mapping found for confirmation number: {confirmation_number}")
             return
         file_path = os.path.join('Faxes/outbound', original_file_name)
-        new_file_name = f"Fax_to_{faxed_to}_{confirmation_number[:5]}_at_{timestamp}_confirmed.pdf"
+        new_file_name = f"Fax_{confirmation_number[:5]}_to_{faxed_to}_at_{timestamp}_confirmed.pdf"
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
         try:
             shutil.move(file_path, new_file_path)
