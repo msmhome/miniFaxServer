@@ -38,10 +38,11 @@ logger = logging.getLogger(__name__)
 
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')  # Using microseconds for uniqueness
 
-# Read and process whitelisted IP ranges from environment variable
+# Read and process whitelisted IP ranges from environment variable or use default
 WHITELISTED_IP_RANGES_STR = os.getenv('WHITELISTED_IP_RANGES')
 if WHITELISTED_IP_RANGES_STR is None:
-    raise ValueError("WHITELISTED_IP_RANGES environment variable is not set")
+    logger.error("WHITELISTED_IP_RANGES environment variable is not set, using hardcoded Telnyx defaults")
+    WHITELISTED_IP_RANGES_STR = '["192.76.120.128/29", "192.76.120.136/29", "192.76.120.144/29", "185.246.41.0/29", "185.246.41.8/29", "185.246.41.16/29"]'
 try:
     # Ensure the string is correctly formatted for JSON
     WHITELISTED_IP_RANGES_STR = WHITELISTED_IP_RANGES_STR.strip().replace("'", '"')
