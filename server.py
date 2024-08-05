@@ -21,8 +21,6 @@ import logging
 import shutil
 import ipaddress
 
-#TODO: Append phone number and timestamp to inbound and outbound final fax PDF files. similar to SMS
-
 # Initialize FastAPI with rate limiter
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI()
@@ -35,6 +33,7 @@ app.mount("/static/outbound", StaticFiles(directory="Faxes/outbound"), name="sta
 #TODO: Standardize logging messages, include timestamp, type, direction, phone numbers, and file. 
 logging.basicConfig(level=logging.INFO)
 logging.basicConfig(level=logging.DEBUG)
+timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')  # Using microseconds for uniqueness
 
 # Read and process whitelisted IP ranges from environment variable
 WHITELISTED_IP_RANGES_STR = os.getenv('WHITELISTED_IP_RANGES')
@@ -85,10 +84,9 @@ class FaxData(BaseModel):
 #Formatting for SMS In
 def sanitize_and_store(message: str, from_number: str, directory="Faxes"):
     sanitized_message = bleach.clean(message, strip=True)
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')  # Using microseconds for uniqueness
+    # timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')  # Using microseconds for uniqueness
     file_name = f"SMS_from_{from_number}_at_{timestamp}.txt"
     os.makedirs(directory, exist_ok=True)  # Ensure the directory exists
-
     file_path = os.path.join(directory, file_name)
     with open(file_path, "w") as file:
         file.write(sanitized_message)
@@ -99,7 +97,7 @@ class SmsData(BaseModel):
     data: dict
 
 #Sanitize and format Fax In File
-def download_file(url, save_directory='Faxes'):
+def download_file(from_number, url, save_directory='Faxes'):
     # Checking if the url is valid
     try:
         split_url = list(urlsplit(url))
@@ -107,7 +105,7 @@ def download_file(url, save_directory='Faxes'):
         url = urlunsplit(split_url)
         url = url.replace("%2B", "+")
         r = requests.get(url, allow_redirects=True, timeout=30)
-        file_name = secure_filename(os.path.basename(urlparse(url).path)) # secure the filename
+        file_name = f"Fax_from_{from_number}_at_{timestamp}_{secure_filename(os.path.basename(urlparse(url).path)[:5])}.pdf" # secure the filename
         os.makedirs(save_directory, exist_ok=True)
         file_path = os.path.join(save_directory, file_name)
         open(file_path, "wb").write(r.content)
@@ -175,7 +173,7 @@ async def inbound_message(request: Request):
         to_number = body["data"]["payload"]["to"]
         from_number = body["data"]["payload"]["from"]
         media_url = body["data"]["payload"]["media_url"]
-        attachment = download_file(media_url)
+        attachment = download_file(from_number,media_url)
         if attachment is None:
             print(f"Failed to download fax with id: {fax_id} from {from_number} to {to_number}")
             return Response(status_code=500)
@@ -199,50 +197,34 @@ class FaxEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         if event.event_type == 'created' and event.src_path.endswith('.pdf'):
-            self.process_fax(event.src_path)
+            print(f"Processing fax for file: {event.src_path}")
+            file_name = os.path.basename(event.src_path)
+            fax_to = os.path.splitext(file_name)[0]  # Extract fax number from file name
+            self.send_fax(event.src_path, fax_to)
 
-    def process_fax(self, file_path):
-        print(f"Processing fax for file: {file_path}")
-        file_name = os.path.basename(file_path)
-        fax_number = os.path.splitext(file_name)[0]  # Extract fax number from file name
-        self.send_fax(file_path, fax_number)
-
-    def send_fax(self, file_path, fax_number, on_success_callback=None):
-        print(f"Sending fax to {fax_number} for file: {file_path}")
+    def send_fax(self, file_path, fax_number):
+        print(f"Sending fax file: {file_path} to {fax_number}")
         file_name = os.path.basename(file_path)
         media_url = f"{os.getenv('MEDIA_BASE_URL')}/outbound/{file_name}"
-        payload = {
-            "connection_id": os.getenv("TELNYX_FAX_CONNECTION_ID"),
-            "from": os.getenv("TELNYX_FAX_FROM_NUMBER"),
-            "media_url": media_url,
-            "monochrome": False,
-            "t38_enabled": True,
-            "to": "+1" + fax_number
-        }
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.getenv('TELNYX_API_KEY')}"
-        }
-
-        url = "https://api.telnyx.com/v2/faxes"
-        response = requests.post(url, json=payload, headers=headers, timeout=900) # change timeout value if you have larger faxes def. 15 minutes
-
-        print(f"Fax send response: {response.status_code}, {response.content}")
-        if response.status_code in [200, 202]:
-            data = response.json()
-            confirmation_number = data['data']['id']
-            new_file_path = os.path.join('Faxes', 'outbound_confirmations', f"{confirmation_number}.pdf")
+        try:
+            fax_response = telnyx.Fax.create(
+                connection_id=os.getenv("TELNYX_FAX_CONNECTION_ID"),
+                from_=os.getenv("TELNYX_FAX_FROM_NUMBER"),
+                media_url=media_url,
+                monochrome=False,
+                t38_enabled=True,
+                to="+1" + fax_number
+            )
+            print(f"Sent fax with fax_id: {fax_response.id}")
+            self.fax_id_to_file[fax_response.id] = file_name  # Store the mapping of fax_id to file_name
+            print(f"Stored mapping: {fax_response.id} -> {file_name}")
+            new_file_path = os.path.join('Faxes', 'outbound_confirmations', f"{fax_response.id}.pdf")
             os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
             # Store the mapping of fax_id to file_name
-            self.fax_id_to_file[confirmation_number] = file_name
-            # Execute the callback with the confirmation number
-            if on_success_callback:
-                on_success_callback(confirmation_number)
-            # Don't move the file yet, wait for confirmation
-            print(f"Fax sent successfully: {data}")
-        else:
-            print(f"Failed to send fax: {response.content}")
+            self.fax_id_to_file[fax_response.id] = file_name
+            print(f"Fax sent successfully: {fax_response}")
+        except Exception as e:
+                print(f"Failed to send fax: {str(e)}")
 
     def on_confirmed(self, faxed_to, confirmation_number):
         print(f"On confirmed called for confirmation number: {confirmation_number}")
@@ -252,7 +234,7 @@ class FaxEventHandler(FileSystemEventHandler):
             print(f"No mapping found for confirmation number: {confirmation_number}")
             return
         file_path = os.path.join('Faxes/outbound', original_file_name)
-        new_file_name = f"{faxed_to}_{confirmation_number}_confirmed.pdf"
+        new_file_name = f"Fax_to_{faxed_to}_{confirmation_number[:5]}_at_{timestamp}_confirmed.pdf"
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
         try:
             shutil.move(file_path, new_file_path)
