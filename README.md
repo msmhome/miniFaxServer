@@ -13,7 +13,7 @@ This is built around my use case and homelab but is versatile to be deployed as-
 *   **PDF Faxes, TXT SMS Files**
 *   **Built Asynchronously**
 
-This has not been tested at scale and outside of my personal at-home use, while it relies on Telnyx to do most of the work, as with all FOSS, no guarantees are made.
+This has not been tested at scale and outside of my at-home use, while it relies on Telnyx to do most of the work, as with all FOSS, no guarantees are made.
 
 # Usage
 
@@ -21,7 +21,7 @@ It's useful to deploy this in a container on a NAS and use a network file share 
 
 miniFaxServer revolves around the /Faxes directory. Faxes and SMS messages received are dumped there in encoded .pdf or .txt files, respectively. 
 
-Add your own IP ranges to the .env whitelist. The default entries are for Telnyx's servers and should not be changed. Try host 0.0.0.0 if you encounter problems with whitelist.
+Add your own IP ranges to the .env whitelist. The default entries are for Telnyx's servers and should not be changed. Try host 0.0.0.0 if you encounter problems with whitelist due to cloudflared showing internal IPs. 
 
 #### Fax In
 
