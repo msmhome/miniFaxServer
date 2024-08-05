@@ -149,9 +149,7 @@ async def handle_sms(data: SmsData):
 async def inbound_message(request: Request):
     try:
         body = await request.json()
-        # fax_id = body["payload"]["fax_id"]
         fax_id = body["data"]["payload"]["fax_id"]
-        # event_type = body.get("event_type")
         event_type = body["data"]["event_type"]
         direction = body["data"]["payload"]["direction"]
 
