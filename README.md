@@ -2,7 +2,7 @@
 
 <img align="right" width="400" height="400" src="https://i.imgur.com/pCU81k6.png">
 
-A tiny, ready to deploy, simple fax and SMS receive server running on the Telynx Programmable Fax and SMS SDK/APIs. 
+A tiny, ready to deploy, simple fax server with SMS recieve running on the Telynx Programmable Fax and SMS APIs. 
 
 This is built around my use case and homelab but is versatile to be deployed as-is for yours or be used in something more complex.
 *   **Fax Inbound and Outbound w/ Confirmations**

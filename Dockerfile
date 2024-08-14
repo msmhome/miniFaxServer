@@ -8,6 +8,7 @@ RUN apt-get update && \
     wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
     dpkg -i cloudflared-linux-amd64.deb && \
     rm -rf /var/lib/apt/lists/* && \
+    apt-get remove wget && \
     rm cloudflared-linux-amd64.deb
 
 # Create cloudflared directory for configuration
