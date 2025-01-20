@@ -8,5 +8,5 @@ starlette==0.40.0
 telnyx==2.1.2
 uvicorn==0.30.0
 watchdog==4.0.1
-Werkzeug==3.0.3
+Werkzeug==3.0.6
 ipaddress==1.0.23
