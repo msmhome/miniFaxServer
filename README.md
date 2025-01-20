@@ -24,19 +24,19 @@ miniFaxServer revolves around the /Faxes directory. Faxes and SMS messages recei
 Add your own IP ranges to the .env whitelist. The default entries are for Telnyx's servers and should not be changed. Try host 0.0.0.0 if you encounter problems with whitelist due to cloudflared showing internal IPs. 
 
 Endpoints exposed:
-*   `/telnyx-webhook` The webhook Telnyx will primarily send fax-related messages to 
-*   `/sms` The webhook Telnyx will use for SMS messages
-*   `/status` Will post a `{"status":"ONLINE"}` for uptime monitoring
+*   `/telnyx-webhook` The webhook Telnyx will primarily send fax-related messages to.
+*   `/sms` The webhook Telnyx will use for SMS messages.
+*   `/status` Will post a `{"status":"ONLINE"}` for uptime monitoring.
 
 #### Fax In
 The faxes received will be saved as a PDF in the Faxes directory under the name `Fax_<first_5_chars_telnyx_fax_id>_from_+12015551234_at_<timestamp>.pdf`.
 
-It's recommended to enable the feature to email faxes in the Telnyx web GUI (it's free).
+It's recommended to enable the feature to also email faxes in the Telnyx web GUI (it's free).
 
 #### Fax Out
-Put any PDF files to be sent out in the Faxes/outbound directory named as the destination phone number, excluding the country code. ie `8885550000.pdf`. This will begin an automatic process to fax that PDF, once delivered, the PDF will be moved to Faxes/outbound\_confirmations as `Fax_<first_5_chars_telnyx_fax_id>_to_+18005001234_at_<timestamp>_confirmed.pdf`.
+Put any PDF files to be sent out in the Faxes/outbound directory named as the destination phone number, excluding the country code. ie `8885550000.pdf`. This will begin an automatic process to fax that PDF. Once delivered, the PDF will be moved to Faxes/outbound\_confirmations as `Fax_<first_5_chars_telnyx_fax_id>_to_+18005001234_at_<timestamp>_confirmed.pdf`.
 
-(note for my use I hardcoded the US +1 country code, modify or remove this in the script as necessary)
+(Note: for my use I hardcoded the US +1 country code, modify or remove this in the script as necessary)
 
 #### SMS In
 SMS must be configured in the Telnyx webui and the webhook must point /sms. Your inbound texts will be saved in the Faxes directory as `SMS_from_+12015550000_at_timestamp.txt`.
