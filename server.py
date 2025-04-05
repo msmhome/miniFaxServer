@@ -239,10 +239,14 @@ class FaxEventHandler(FileSystemEventHandler):
         new_file_name = f"Fax_{confirmation_number[:5]}_to_{faxed_to}_at_{timestamp}_confirmed.pdf"
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
         try:
-            shutil.move(file_path, new_file_path)
-            print(f"Moved confirmed fax to {new_file_path}")
+            shutil.copy2(file_path, new_file_path)
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                logger.warning(f"Could not remove original file {file_path}: {str(e)}")
+            print(f"Copied confirmed fax to {new_file_path}")
         except Exception as e:
-            logger.error(f"Failed to move file for fax {confirmation_number}: {str(e)}")
+            logger.error(f"Failed to copy file for fax {confirmation_number}: {str(e)}")
 
 if __name__ == "__main__":
     load_dotenv()
