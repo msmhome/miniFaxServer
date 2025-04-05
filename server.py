@@ -18,7 +18,7 @@ import uvicorn
 import bleach
 import json
 import logging
-import shutil
+# import shutil
 import ipaddress
 
 # Initialize FastAPI with rate limiter
@@ -239,12 +239,21 @@ class FaxEventHandler(FileSystemEventHandler):
         new_file_name = f"Fax_{confirmation_number[:5]}_to_{faxed_to}_at_{timestamp}_confirmed.pdf"
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
         try:
-            shutil.copy2(file_path, new_file_path)
+            # First read the file content
+            with open(file_path, 'rb') as f_in:
+                file_content = f_in.read()
+                
+            # Then write it to the new location
+            with open(new_file_path, 'wb') as f_out:
+                f_out.write(file_content)
+                
+            # Try to remove the original file
             try:
                 os.remove(file_path)
+                print(f"Successfully moved confirmed fax to {new_file_path}")
             except Exception as e:
-                logger.warning(f"Could not remove original file {file_path}: {str(e)}")
-            print(f"Copied confirmed fax to {new_file_path}")
+                logger.warning(f"Created copy but could not remove original file {file_path}: {str(e)}")
+                print(f"Created copy of confirmed fax at {new_file_path}, but could not remove original")
         except Exception as e:
             logger.error(f"Failed to copy file for fax {confirmation_number}: {str(e)}")
 
