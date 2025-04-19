@@ -2,6 +2,8 @@
 
 <img align="right" width="400" height="400" src="https://i.imgur.com/pCU81k6.png">
 
+[![Ceasefire Now](https://badge.techforpalestine.org/default)](https://techforpalestine.org/learn-more)
+
 A tiny, ready to deploy, simple fax server with SMS recieve running on the Telynx Programmable Fax and SMS APIs. 
 
 This is built around my use case and homelab but is versatile to be deployed as-is for yours or be used in something more complex.
