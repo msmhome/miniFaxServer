@@ -2,7 +2,7 @@ bleach==6.2.0
 fastapi==0.115.12
 pydantic==2.11.2
 python-dotenv==1.1.0
-Requests==2.32.3
+Requests==2.32.4
 slowapi==0.1.9
 starlette==0.46.1
 telnyx==2.1.5
