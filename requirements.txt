@@ -4,7 +4,7 @@ pydantic==2.11.2
 python-dotenv==1.1.0
 Requests==2.32.4
 slowapi==0.1.9
-starlette==0.46.1
+starlette==0.47.2
 telnyx==2.1.5
 uvicorn==0.34.0
 watchdog==6.0.0
