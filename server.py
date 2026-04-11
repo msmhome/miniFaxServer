@@ -41,7 +41,7 @@ timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # Using seconds for unique
 WHITELISTED_IP_RANGES_STR = os.getenv('WHITELISTED_IP_RANGES')
 if WHITELISTED_IP_RANGES_STR is None:
     logger.error("WHITELISTED_IP_RANGES environment variable is not set, using hardcoded Telnyx defaults")
-    WHITELISTED_IP_RANGES_STR = '["192.76.120.128/29", "192.76.120.136/29", "192.76.120.144/29", "185.246.41.0/29", "185.246.41.8/29", "185.246.41.16/29"]'
+    WHITELISTED_IP_RANGES_STR = '["64.16.250.10/32", "192.76.120.10/32", "185.246.41.140/32", "185.246.41.141/32", "192.76.120.128/29", "192.76.120.136/29", "192.76.120.144/29", "192.76.120.160/29", "185.246.41.0/29", "185.246.41.8/29", "185.246.41.16/29", "36.255.198.128/25", "50.114.136.128/25", "50.114.144.0/21", "64.16.226.0/24", "64.16.227.0/24", "64.16.228.0/24", "64.16.229.0/24", "64.16.230.0/24", "64.16.248.0/24", "64.16.249.0/24", "103.115.244.128/25", "185.246.41.128/25"]'
 try:
     # Ensure the string is correctly formatted for JSON
     WHITELISTED_IP_RANGES_STR = WHITELISTED_IP_RANGES_STR.strip().replace("'", '"')
@@ -69,7 +69,7 @@ def is_whitelisted(ip):
 
 @app.middleware("http")
 async def whitelist_middleware(request: Request, call_next):
-    client_ip = request.client.host
+    client_ip = request.headers.get("CF-Connecting-IP") or request.client.host
     if not is_whitelisted(client_ip):
         return Response(status_code=403, content="Forbidden")
     response = await call_next(request)
@@ -159,7 +159,7 @@ async def inbound_message(request: Request):
             # Call on_confirmed with the fax_id received from the webhook
             event_handler.on_confirmed(faxed_to, fax_id)
         elif event_type == "fax.failed":
-            failure_reason = body["payload"].get("failure_reason")
+            failure_reason = body["data"]["payload"].get("failure_reason")
             logger.error(f"Fax failed with reason: {failure_reason}")
         # else:
         #     logger.error(f"Unhandled event type: {event_type}")
@@ -208,7 +208,7 @@ class FaxEventHandler(FileSystemEventHandler):
         file_name = os.path.basename(file_path)
         media_url = f"{os.getenv('MEDIA_BASE_URL')}/outbound/{file_name}"
         try:
-            fax_response = telnyx.Fax.create(
+            fax_response = telnyx_client.faxes.create(
                 connection_id=os.getenv("TELNYX_FAX_CONNECTION_ID"),
                 from_=os.getenv("TELNYX_FAX_FROM_NUMBER"),
                 media_url=media_url,
@@ -216,13 +216,12 @@ class FaxEventHandler(FileSystemEventHandler):
                 t38_enabled=True,
                 to="+1" + fax_number
             )
-            logger.debug(f"Sent fax with fax_id: {fax_response.id} to server")
-            self.fax_id_to_file[fax_response.id] = file_name  # Store the mapping of fax_id to file_name
-            logger.debug(f"Stored mapping: {fax_response.id} -> {file_name}")
-            new_file_path = os.path.join('Faxes', 'outbound_confirmations', f"{fax_response.id}.pdf")
+            fax_id = fax_response.data.id
+            logger.debug(f"Sent fax with fax_id: {fax_id} to server")
+            self.fax_id_to_file[fax_id] = file_name  # Store the mapping of fax_id to file_name
+            logger.debug(f"Stored mapping: {fax_id} -> {file_name}")
+            new_file_path = os.path.join('Faxes', 'outbound_confirmations', f"{fax_id}.pdf")
             os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
-            # Store the mapping of fax_id to file_name
-            self.fax_id_to_file[fax_response.id] = file_name
             logger.debug(f"Fax sent successfully: {fax_response}")
         except Exception as e:
                 logger.error(f"Failed to send fax: {str(e)}")
@@ -258,8 +257,10 @@ class FaxEventHandler(FileSystemEventHandler):
 
 if __name__ == "__main__":
     load_dotenv()
-    telnyx.api_key = os.getenv("TELNYX_API_KEY")
-    telnyx.public_key = os.getenv("TELNYX_PUBLIC_KEY")
+    telnyx_client = telnyx.Telnyx(
+        api_key=os.getenv("TELNYX_API_KEY"),
+        public_key=os.getenv("TELNYX_PUBLIC_KEY"),
+    )
 
     # Set up the observer for the FaxEventHandler
     path = "Faxes/outbound"
