@@ -1,7 +1,7 @@
 import os
+import re
 import requests
 from urllib.parse import urlparse, urlsplit, urlunsplit
-from werkzeug.utils import secure_filename
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -13,6 +13,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel, Field
 import telnyx
+from telnyx.lib.webhook_verification import verify_webhook_signature, WebhookVerificationError
 from dotenv import load_dotenv
 import uvicorn
 import bleach
@@ -67,15 +68,55 @@ def is_whitelisted(ip):
     ip_address = ipaddress.ip_address(ip)
     return any(ip_address in network for network in WHITELISTED_IP_RANGES)
 
+LOCAL_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("fe80::/10"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+def is_local_ip(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+        return any(addr in network for network in LOCAL_NETWORKS)
+    except ValueError:
+        return False
+
+def secure_filename(name: str) -> str:
+    name = os.path.basename(name)
+    name = re.sub(r'[^A-Za-z0-9_.\-]', '_', name)
+    name = name.lstrip('.')
+    return name or 'file'
+
+# SSRF guard for media URLs
+def is_safe_media_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ''
+        return parsed.scheme == 'https' and (host == 'telnyx.com' or host.endswith('.telnyx.com') or host == 's3.amazonaws.com' or host.endswith('.s3.amazonaws.com'))
+    except Exception:
+        return False
+
+# fax number validation
+def is_valid_fax_number(number: str) -> bool:
+    return bool(re.fullmatch(r'\d{10,15}', number))
+
 @app.middleware("http")
 async def whitelist_middleware(request: Request, call_next):
-    client_ip = request.headers.get("CF-Connecting-IP") or request.client.host
+    direct_ip = request.client.host
+    if is_local_ip(direct_ip):
+        client_ip = request.headers.get("CF-Connecting-IP") or direct_ip
+    else:
+        client_ip = direct_ip
     if not is_whitelisted(client_ip):
         return Response(status_code=403, content="Forbidden")
-    response = await call_next(request)
-    return response
+    return await call_next(request)
 
-# Formatting for Fax In
+#Format for Fax In
 class FaxData(BaseModel):
     event_type: str
     direction: str
@@ -84,11 +125,11 @@ class FaxData(BaseModel):
     from_: str = Field(alias="from")
     media_url: str
 
-#Formatting for SMS In
+#Format for SMS In
 def sanitize_and_store(message: str, from_number: str, directory="Faxes"):
     sanitized_message = bleach.clean(message, strip=True)
     file_name = f"SMS_from_{from_number}_at_{timestamp}.txt"
-    os.makedirs(directory, exist_ok=True)  # Ensure the directory exists
+    os.makedirs(directory, exist_ok=True)
     file_path = os.path.join(directory, file_name)
     with open(file_path, "w") as file:
         file.write(sanitized_message)
@@ -100,14 +141,18 @@ class SmsData(BaseModel):
 
 #Sanitize and format Fax In File
 def download_file(from_number, url, save_directory='Faxes'):
-    # Checking if the url is valid
+    if not is_safe_media_url(url):
+        logger.error(f"Rejected unsafe media URL: {url}")
+        return None
     try:
         split_url = list(urlsplit(url))
         split_url[1] = secure_filename(split_url[1])
         url = urlunsplit(split_url)
         url = url.replace("%2B", "+")
-        r = requests.get(url, allow_redirects=True, timeout=30)
-        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{from_number}_at_{timestamp}.pdf" # secure the filename
+        # don't follow redirects; raise on bad HTTP status 
+        r = requests.get(url, allow_redirects=False, timeout=30)
+        r.raise_for_status()
+        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{from_number}_at_{timestamp}.pdf"
         os.makedirs(save_directory, exist_ok=True)
         file_path = os.path.join(save_directory, file_name)
         open(file_path, "wb").write(r.content)
@@ -144,37 +189,42 @@ async def handle_sms(data: SmsData):
         return Response(status_code=500)
 
 @app.post("/telnyx-webhook")
-@limiter.limit("100/minute") #Set webhook rate limit
+@limiter.limit("100/minute")
 async def inbound_message(request: Request):
+    # verify webhook signature before processing
+    body = await request.body()
     try:
-        body = await request.json()
-        fax_id = body["data"]["payload"]["fax_id"]
-        event_type = body["data"]["event_type"]
-        direction = body["data"]["payload"]["direction"]
+        verify_webhook_signature(body, request.headers, os.getenv("TELNYX_PUBLIC_KEY", ""))
+    except WebhookVerificationError as e:
+        logger.error(f"Webhook signature verification failed: {e}")
+        return Response(status_code=403, content="Forbidden")
+
+    try:
+        body_json = json.loads(body)
+        fax_id = body_json["data"]["payload"]["fax_id"]
+        event_type = body_json["data"]["event_type"]
+        direction = body_json["data"]["payload"]["direction"]
 
         if event_type == "fax.delivered":
-            faxed_to = body["data"]["payload"]["to"]
+            faxed_to = body_json["data"]["payload"]["to"]
             print(f"Fax ID {fax_id} delivered to {faxed_to} at {timestamp}")
             logger.debug(f"Received delivery confirmation for fax ID: {fax_id}")
             # Call on_confirmed with the fax_id received from the webhook
             event_handler.on_confirmed(faxed_to, fax_id)
         elif event_type == "fax.failed":
-            failure_reason = body["data"]["payload"].get("failure_reason")
+            failure_reason = body_json["data"]["payload"].get("failure_reason")
             logger.error(f"Fax failed with reason: {failure_reason}")
-        # else:
-        #     logger.error(f"Unhandled event type: {event_type}")
 
         if event_type != "fax.received" or direction != "inbound":
-            failure_reason = body["data"]["payload"].get("failure_reason")
+            failure_reason = body_json["data"]["payload"].get("failure_reason")
             if failure_reason:
                 logger.error(f"Fax failed due to: {failure_reason}")
-            # print(f"Received fax event_type: {event_type} to {direction} fax_id: {fax_id}")
             logger.debug(f"Received fax event_type: {event_type} to {direction} fax_id: {fax_id}")
             return Response(status_code=200)
-        to_number = body["data"]["payload"]["to"]
-        from_number = body["data"]["payload"]["from"]
-        media_url = body["data"]["payload"]["media_url"]
-        attachment = download_file(from_number,media_url)
+        to_number = body_json["data"]["payload"]["to"]
+        from_number = body_json["data"]["payload"]["from"]
+        media_url = body_json["data"]["payload"]["media_url"]
+        attachment = download_file(from_number, media_url)
         if attachment is None:
             logger.error(f"Failed to download fax with id: {fax_id} from {from_number} to {to_number}")
             return Response(status_code=500)
@@ -186,7 +236,7 @@ async def inbound_message(request: Request):
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
         return Response(status_code=500)
-    
+
 
 class FaxEventHandler(FileSystemEventHandler):
     def __init__(self):
@@ -200,10 +250,14 @@ class FaxEventHandler(FileSystemEventHandler):
         if event.event_type == 'created' and event.src_path.endswith('.pdf'):
             logger.debug(f"Processing fax for file: {event.src_path}")
             file_name = os.path.basename(event.src_path)
-            fax_to = os.path.splitext(file_name)[0]  # Extract fax number from file name
+            fax_to = os.path.splitext(file_name)[0]
             self.send_fax(event.src_path, fax_to)
 
     def send_fax(self, file_path, fax_number):
+        # validate fax number before sending
+        if not is_valid_fax_number(fax_number):
+            logger.error(f"Invalid fax number '{fax_number}', skipping")
+            return
         print(f"Faxing file {file_path} to {fax_number}")
         file_name = os.path.basename(file_path)
         media_url = f"{os.getenv('MEDIA_BASE_URL')}/outbound/{file_name}"
@@ -218,13 +272,13 @@ class FaxEventHandler(FileSystemEventHandler):
             )
             fax_id = fax_response.data.id
             logger.debug(f"Sent fax with fax_id: {fax_id} to server")
-            self.fax_id_to_file[fax_id] = file_name  # Store the mapping of fax_id to file_name
+            self.fax_id_to_file[fax_id] = file_name
             logger.debug(f"Stored mapping: {fax_id} -> {file_name}")
             new_file_path = os.path.join('Faxes', 'outbound_confirmations', f"{fax_id}.pdf")
             os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
             logger.debug(f"Fax sent successfully: {fax_response}")
         except Exception as e:
-                logger.error(f"Failed to send fax: {str(e)}")
+            logger.error(f"Failed to send fax: {str(e)}")
 
     def on_confirmed(self, faxed_to, confirmation_number):
         logger.debug(f"On confirmed file move called for confirmation number: {confirmation_number}")
@@ -271,4 +325,4 @@ if __name__ == "__main__":
     observer.start()
 
     # Start the FastAPI app
-    uvicorn.run(app, host=str(os.getenv("HOST")), port=int(os.getenv("PORT")), log_level=(os.getenv('LOG_LEVEL', 'ERROR').lower()), ssl_keyfile='certs/key.pem', ssl_certfile='certs/cert.pem')
+    uvicorn.run(app, host=str(os.getenv("HOST")), port=int(os.getenv("PORT")), log_level=(os.getenv('LOG_LEVEL', 'ERROR').lower()), ssl_keyfile='certs/key.pem', ssl_certfile='certs/cert.pem', proxy_headers=False)

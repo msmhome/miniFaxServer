@@ -8,5 +8,4 @@ starlette==1.0.0
 telnyx==4.105.0
 uvicorn==0.44.0
 watchdog==6.0.0
-Werkzeug==3.1.8
-ipaddress==1.0.23
+pynacl==1.6.2
