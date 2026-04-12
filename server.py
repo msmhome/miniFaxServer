@@ -47,8 +47,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.mount("/static/outbound", StaticFiles(directory="Faxes/outbound"), name="static") # mount outbound faxes directory to webserver
 
-# Determine the log level from environment variable or default to error
-log_level_str = os.getenv('LOG_LEVEL', 'ERROR').upper()
+# Determine the log level from environment variable or default to info
+log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
 log_level = getattr(logging, log_level_str, logging.DEBUG)
 
 # Configure logging
@@ -72,7 +72,6 @@ try:
             WHITELISTED_IP_RANGES.append(ipaddress.ip_network(ip))
         except ValueError as e:
             logger.error(f"[ERROR]:Invalid IP range '{ip}' skipped: {e}")
-    # print(f"Parsed Whitelisted IP ranges: {WHITELISTED_IP_RANGES}")
     logger.debug(f"Parsed WHITELISTED_IP_RANGES: {WHITELISTED_IP_RANGES}")
 
 except ipaddress.AddressValueError as e:
@@ -200,7 +199,7 @@ async def handle_sms(request: Request, data: SmsData):
         message = data.data.get('payload').get('text')
         from_number = data.data.get('payload').get('from').get('phone_number')
         sanitized_message = sanitize_and_store(message, from_number)
-        print(f"Received an SMS from {from_number}: {sanitized_message}")
+        logger.info(f"Received an SMS from {from_number}: {sanitized_message}")
         logger.debug(f"Received an SMS from {from_number}: {'message.payload'}")
         return Response(status_code=200)
     except (KeyError, AttributeError, TypeError):
@@ -230,7 +229,7 @@ async def inbound_message(request: Request):
 
         if event_type == "fax.delivered":
             faxed_to = body_json["data"]["payload"]["to"]
-            print(f"Fax ID {fax_id} delivered to {faxed_to} at {timestamp}")
+            logger.info(f"Fax ID {fax_id} delivered to {faxed_to} at {timestamp}")
             logger.debug(f"Received delivery confirmation for fax ID: {fax_id}")
             # Call on_confirmed with the fax_id received from the webhook
             event_handler.on_confirmed(faxed_to, fax_id)
@@ -251,7 +250,7 @@ async def inbound_message(request: Request):
         if attachment is None:
             logger.error(f"Failed to download fax with id: {fax_id} from {from_number} to {to_number}")
             return Response(status_code=500)
-        print(f"Received incoming fax with id: {fax_id} from {from_number} to {to_number}")
+        logger.info(f"Received incoming fax with id: {fax_id} from {from_number} to {to_number}")
         return Response(status_code=200)
     except KeyError:
         logger.error("Incorrect data format received.")
@@ -285,7 +284,7 @@ class FaxEventHandler:
         if not is_valid_fax_number(fax_number):
             logger.error(f"Invalid fax number '{fax_number}', skipping")
             return
-        print(f"Faxing file {file_path} to {fax_number}")
+        logger.info(f"Faxing file {file_path} to {fax_number}")
         file_name = os.path.basename(file_path)
         media_url = f"{os.getenv('MEDIA_BASE_URL')}/outbound/{file_name}"
         try:
@@ -329,10 +328,10 @@ class FaxEventHandler:
             # Try to remove the original file
             try:
                 os.remove(file_path)
-                print(f"Successfully moved confirmed fax to {new_file_path}")
+                logger.info(f"Successfully moved confirmed fax to {new_file_path}")
             except Exception as e:
                 logger.warning(f"Created copy but could not remove original file {file_path}: {str(e)}")
-                print(f"Created copy of confirmed fax at {new_file_path}, but could not remove original")
+                logger.info(f"Created copy of confirmed fax at {new_file_path}, but could not remove original")
         except Exception as e:
             logger.error(f"Failed to copy file for fax {confirmation_number}: {str(e)}")
 
