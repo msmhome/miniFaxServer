@@ -1,16 +1,15 @@
 import os
 import re
+import asyncio
+import time
 import requests
+from collections import defaultdict
 from urllib.parse import urlparse, urlsplit, urlunsplit
 from datetime import datetime
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel, Field
 import telnyx
 from telnyx.lib.webhook_verification import verify_webhook_signature, WebhookVerificationError
@@ -21,11 +20,31 @@ import json
 import logging
 import ipaddress
 
-# Initialize FastAPI with rate limiter
-limiter = Limiter(key_func=get_remote_address)
-app = FastAPI()
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+load_dotenv()
+
+# Simple in-memory rate limiter (100 req/min per IP)
+_rate_buckets: dict = defaultdict(list)
+
+def is_rate_limited(key: str, limit: int = 100, window: int = 60) -> bool:
+    now = time.monotonic()
+    _rate_buckets[key] = [t for t in _rate_buckets[key] if now - t < window]
+    if len(_rate_buckets[key]) >= limit:
+        return True
+    _rate_buckets[key].append(now)
+    return False
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(event_handler.start_watching("Faxes/outbound"))
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+# Initialize FastAPI
+app = FastAPI(lifespan=lifespan)
 app.mount("/static/outbound", StaticFiles(directory="Faxes/outbound"), name="static") # mount outbound faxes directory to webserver
 
 # Determine the log level from environment variable or default to error
@@ -128,7 +147,7 @@ class FaxData(BaseModel):
 #Format for SMS In
 def sanitize_and_store(message: str, from_number: str, directory="Faxes"):
     sanitized_message = bleach.clean(message, strip=True)
-    file_name = f"SMS_from_{from_number}_at_{timestamp}.txt"
+    file_name = f"SMS_from_{secure_filename(from_number)}_at_{timestamp}.txt"
     os.makedirs(directory, exist_ok=True)
     file_path = os.path.join(directory, file_name)
     with open(file_path, "w") as file:
@@ -152,10 +171,11 @@ def download_file(from_number, url, save_directory='Faxes'):
         # don't follow redirects; raise on bad HTTP status 
         r = requests.get(url, allow_redirects=False, timeout=30)
         r.raise_for_status()
-        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{from_number}_at_{timestamp}.pdf"
+        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{secure_filename(from_number)}_at_{timestamp}.pdf"
         os.makedirs(save_directory, exist_ok=True)
         file_path = os.path.join(save_directory, file_name)
-        open(file_path, "wb").write(r.content)
+        with open(file_path, "wb") as f:
+            f.write(r.content)
         return file_path
     except Exception as e:
         logger.error(f"An error occurred while downloading the fax file: {e}")
@@ -173,7 +193,9 @@ async def status():
     return {"status": "ONLINE"}
 
 @app.post("/sms")
-async def handle_sms(data: SmsData):
+async def handle_sms(request: Request, data: SmsData):
+    if is_rate_limited(request.client.host): #Set SMS rate limit
+        return Response(status_code=429, content="Too Many Requests")
     try:
         message = data.data.get('payload').get('text')
         from_number = data.data.get('payload').get('from').get('phone_number')
@@ -181,7 +203,7 @@ async def handle_sms(data: SmsData):
         print(f"Received an SMS from {from_number}: {sanitized_message}")
         logger.debug(f"Received an SMS from {from_number}: {'message.payload'}")
         return Response(status_code=200)
-    except KeyError:
+    except (KeyError, AttributeError, TypeError):
         logger.error("Incorrect incoming SMS data format received.")
         return Response(status_code=400)
     except Exception as e:
@@ -189,8 +211,9 @@ async def handle_sms(data: SmsData):
         return Response(status_code=500)
 
 @app.post("/telnyx-webhook")
-@limiter.limit("100/minute")
 async def inbound_message(request: Request):
+    if is_rate_limited(request.client.host): #Set webhook rate limit
+        return Response(status_code=429, content="Too Many Requests")
     # verify webhook signature before processing
     body = await request.body()
     try:
@@ -238,20 +261,24 @@ async def inbound_message(request: Request):
         return Response(status_code=500)
 
 
-class FaxEventHandler(FileSystemEventHandler):
+class FaxEventHandler:
     def __init__(self):
-        super().__init__()
         self.fax_id_to_file = {}
 
-    def on_created(self, event):
-        logger.debug(f"Event detected: {event}")
-        if event.is_directory:
-            return
-        if event.event_type == 'created' and event.src_path.endswith('.pdf'):
-            logger.debug(f"Processing fax for file: {event.src_path}")
-            file_name = os.path.basename(event.src_path)
-            fax_to = os.path.splitext(file_name)[0]
-            self.send_fax(event.src_path, fax_to)
+    async def start_watching(self, path: str):
+        known = set(os.listdir(path)) if os.path.isdir(path) else set()
+        while True:
+            await asyncio.sleep(2)
+            try:
+                current = set(os.listdir(path)) if os.path.isdir(path) else set()
+                for filename in current - known:
+                    if filename.endswith('.pdf'):
+                        logger.debug(f"Processing fax for file: {filename}")
+                        fax_to = os.path.splitext(filename)[0] # Extract fax number from file name
+                        self.send_fax(os.path.join(path, filename), fax_to)
+                known = current
+            except Exception as e:
+                logger.error(f"Error polling outbound directory: {e}")
 
     def send_fax(self, file_path, fax_number):
         # validate fax number before sending
@@ -272,7 +299,7 @@ class FaxEventHandler(FileSystemEventHandler):
             )
             fax_id = fax_response.data.id
             logger.debug(f"Sent fax with fax_id: {fax_id} to server")
-            self.fax_id_to_file[fax_id] = file_name
+            self.fax_id_to_file[fax_id] = file_name # Store the mapping of fax_id to file_name
             logger.debug(f"Stored mapping: {fax_id} -> {file_name}")
             new_file_path = os.path.join('Faxes', 'outbound_confirmations', f"{fax_id}.pdf")
             os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
@@ -288,7 +315,7 @@ class FaxEventHandler(FileSystemEventHandler):
             logger.error(f"No mapping found for confirmation number: {confirmation_number}")
             return
         file_path = os.path.join('Faxes/outbound', original_file_name)
-        new_file_name = f"Fax_{confirmation_number[:5]}_to_{faxed_to}_at_{timestamp}_confirmed.pdf"
+        new_file_name = f"Fax_{secure_filename(confirmation_number[:5])}_to_{secure_filename(faxed_to)}_at_{timestamp}_confirmed.pdf"
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
         try:
             # First read the file content
@@ -310,19 +337,14 @@ class FaxEventHandler(FileSystemEventHandler):
             logger.error(f"Failed to copy file for fax {confirmation_number}: {str(e)}")
 
 if __name__ == "__main__":
-    load_dotenv()
     telnyx_client = telnyx.Telnyx(
         api_key=os.getenv("TELNYX_API_KEY"),
         public_key=os.getenv("TELNYX_PUBLIC_KEY"),
     )
 
-    # Set up the observer for the FaxEventHandler
-    path = "Faxes/outbound"
+    # Set up the FaxEventHandler (watching is started by lifespan)
     global event_handler
     event_handler = FaxEventHandler()
-    observer = Observer()
-    observer.schedule(event_handler, path, recursive=False)
-    observer.start()
 
     # Start the FastAPI app
     uvicorn.run(app, host=str(os.getenv("HOST")), port=int(os.getenv("PORT")), log_level=(os.getenv('LOG_LEVEL', 'ERROR').lower()), ssl_keyfile='certs/key.pem', ssl_certfile='certs/cert.pem', proxy_headers=False)
