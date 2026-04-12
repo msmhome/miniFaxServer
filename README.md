@@ -37,7 +37,7 @@ Endpoints exposed:
 *   `/telnyx-webhook` The webhook Telnyx will primarily send fax-related messages to.
 *   `/sms` The webhook Telnyx will use for SMS messages.
 *   `/status` Will post a `{"status":"ONLINE"}` for uptime monitoring.
-
+***
 #### Fax In
 The faxes received will be saved as a PDF in the Faxes directory under the name `Fax_<first_5_chars_faxid>_from__12015551234_at_<timestamp>.pdf`.
 
@@ -52,7 +52,6 @@ Put any PDF files to be sent out in the Faxes/outbound directory named as the de
 SMS must be configured in the Telnyx portal and the webhook must point /sms. Your inbound texts will be saved in the Faxes directory as `SMS_from_+12015550000_at_timestamp.txt`.
 
 ## Installation
-
 ### Docker Container
 
 Save [.env.example](https://raw.githubusercontent.com/msmhome/miniFaxServer/refs/heads/main/.env.example) as .env and edit values.
@@ -70,6 +69,7 @@ docker run -d \
 ```
 
 Pull the prebuilt container image, or just specify `ghcr.io/msmhome/minifaxserver:latest` if using a managed GUI like TrueNAS SCALE or Unraid.
+***
 
 ### Standard Python Install
 
@@ -93,9 +93,6 @@ Run with
 python server.py
 ```
 
-
-
-
 #### [Please submit issues here.](https://github.com/msmhome/miniFaxServer/issues)
 
 ## Configuration
@@ -116,8 +113,8 @@ Copy `.env.example` to `.env` or load these environment values another way, then
 | TUNNEL_TOKEN             | Yes          | Cloudflared Tunnel Token                                             |
 | LOG_LEVEL                | No           | `INFO` set by default, `ERROR` & `DEBUG` available                   |
 
-
-#### Overview of the directories that must be mounted as volumes:
+***
+#### Directories that must be mounted as volumes:
 
 *   `/app/.env (read only)`
 *   `/app/certs/ (read only)`
@@ -125,6 +122,7 @@ Copy `.env.example` to `.env` or load these environment values another way, then
 *   `/app/Faxes/outbound/`
 *   `/app/Faxes/outbound_confirmations/`
 
+***
 ### TELNYX_FAX_CONNECTION_ID
 
 This is the Application ID for your Telnyx Fax API Application.
@@ -146,10 +144,8 @@ This is the Application ID for your Telnyx Fax API Application.
 
 Set the Fax API Application's webhook URL to:
 ```
-[HOST]/telnyx-webhook
+https://[HOST]/telnyx-webhook
 ```
-Replace `[HOST]` with your server's public base URL (e.g., `https://your-app.example.com`).
-
 ***
 
 ### MESSAGE_PROFILE_ID
@@ -163,10 +159,10 @@ This is the Profile ID for your Telnyx Programmable Messaging profile.
 3. Click **Add New Profile**.
 4. In the profile settings, set the **Webhook URL** to:
    ```
-   [HOST]/sms
+   https://[HOST]/sms
    ```
-   Replace `[HOST]` with your server's public base URL.
 5. Save the profile, then copy the **Profile ID** and set it as `MESSAGE_PROFILE_ID` in your `.env` file.
+***
 
 ### Cloudflare Tunnels (cloudflared)
 
@@ -177,10 +173,9 @@ Cloudflared is built in and recommended instead of an open port. Set `Disable Ch
 It's also recommended to get an origin server certificate and save the certificate and private key to `certs/certificate.pem` and `certs/key.pem`, respectively. Make sure to set your cloudflare tunnel configuration as HTTPS and set the origin server name.  
 
 
-## Resources
+# Resources
 
-#### Need to test your fax setup?
-
+### Need to test your fax setup?
 Try the [Canon](https://community.usa.canon.com/t5/Desktop-Inkjet-Printers/G7020-FAX/m-p/295192/highlight/true#M17767) Test Fax Service at +1 855-392-2666. This has better uptime than HP's fax test service, and replies faster.
 
-#### [Telnyx Fax Docs](https://developers.telnyx.com/docs/programmable-fax/get-started)
+### [Telnyx Fax Docs](https://developers.telnyx.com/docs/programmable-fax/get-started)
