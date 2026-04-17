@@ -56,7 +56,7 @@ SMS must be configured in the Telnyx portal and the webhook must point /sms. You
 
 Save [.env.example](https://raw.githubusercontent.com/msmhome/miniFaxServer/refs/heads/main/.env.example) as .env and edit values.
 
-Create `Faxes/`, `Faxes/outbound`, `Faxes/outbound_confirmations` and `certs/` if using origin certificates
+Create `Faxes/`, `Faxes/outbound`, `Faxes/outbound_confirmations` and `certs/` if using origin certificates (recommended).
 
 ```bash
 docker run -d \
@@ -68,7 +68,14 @@ docker run -d \
   ghcr.io/msmhome/minifaxserver:latest
 ```
 
-Pull the prebuilt container image, or just specify `ghcr.io/msmhome/minifaxserver:latest` if using a managed GUI like TrueNAS SCALE or Unraid.
+### TrueNAS / Unraid / Rancher / Portainer
+Specify `ghcr.io/msmhome/minifaxserver:latest` as the image url if using a managed GUI like TrueNAS SCALE or Unraid. Fill in environment variables through gui; but if you decide to mount the .env instead, set it to read-only.
+
+Create `Faxes/`, `Faxes/outbound`, `Faxes/outbound_confirmations`. Ideally, create a network share to the Faxes/ directory to use on your filesystem.
+
+**Recommended**:
+Create `certs/` to use origin certificates. Upload/write your certificate and key files as `certs/cert.pem` and `certs/key.pem`. 
+
 ***
 
 ### Standard Python Install
@@ -79,12 +86,18 @@ cd miniFaxServer
 
 cp .env.example .env
 # Edit .env with your values
-
+nano .env
+```
+```bash
+# Create a python virtual environment
 python -m venv .venv
+
+# Use virtual environment
 source .venv/bin/activate  # Linux/macOS
 # OR
 .venv\Scripts\activate.bat  # Windows
 
+# Install dependencies in virtual environment
 pip install -r requirements.txt
 ```
 
@@ -178,4 +191,4 @@ It's also recommended to get an origin server certificate and save the certifica
 ### Need to test your fax setup?
 Try the [Canon](https://community.usa.canon.com/t5/Desktop-Inkjet-Printers/G7020-FAX/m-p/295192/highlight/true#M17767) Test Fax Service at +1 855-392-2666. This has better uptime than HP's fax test service, and replies faster.
 
-### [Telnyx Fax Docs](https://developers.telnyx.com/docs/programmable-fax/get-started)
+#### [Telnyx Fax Docs](https://developers.telnyx.com/docs/programmable-fax/get-started)
