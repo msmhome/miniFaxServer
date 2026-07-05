@@ -11,12 +11,6 @@ RUN apt-get update && \
     apt-get remove wget -y && \
     rm cloudflared-linux-amd64.deb
 
-# Create cloudflared directory for configuration
-RUN mkdir -p /etc/cloudflared
-
-# Set environment variables for cloudflared TODO: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "TUNNEL_TOKEN") (line 16)
-ENV TUNNEL_TOKEN=$TUNNEL_TOKEN
-
 WORKDIR /app
 
 COPY server.py .
