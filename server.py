@@ -300,7 +300,8 @@ class FaxEventHandler:
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
         try:
             os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
-            shutil.move(file_path, new_file_path)
+            shutil.copyfile(file_path, new_file_path)  # data only; copystat fails on cross-mount volumes
+            os.remove(file_path)
             logger.info(f"Successfully moved confirmed fax to {new_file_path}")
         except Exception as e:
             logger.error(f"Failed to move file for fax {confirmation_number}: {str(e)}")
