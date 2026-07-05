@@ -1,5 +1,5 @@
-fastapi==0.135.3
+fastapi==0.139.0
 python-dotenv==1.2.2
-telnyx==4.105.0
-uvicorn==0.44.0
+telnyx==4.167.0
+uvicorn==0.50.0
 pynacl==1.6.2
