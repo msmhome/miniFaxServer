@@ -131,7 +131,8 @@ async def whitelist_middleware(request: Request, call_next):
 
 #Store SMS In as plain text
 def store_sms(message: str, from_number: str, directory="Faxes"):
-    file_name = f"SMS_from_{secure_filename(from_number)}_at_{timestamp}.txt"
+    # store_sms / sanitize_and_store
+    file_name = f"SMS_from_{secure_filename(from_number)}_at_{now_stamp()}.txt"
     os.makedirs(directory, exist_ok=True)
     with open(os.path.join(directory, file_name), "w") as file:
         file.write(message)
@@ -151,7 +152,8 @@ def download_file(from_number, url, save_directory='Faxes'):
         # redirects rejected; HTTPError raised on bad status
         with _url_opener.open(url, timeout=30) as r:
             content = r.read()
-        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{secure_filename(from_number)}_at_{timestamp}.pdf"
+        # download_file
+        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{secure_filename(from_number)}_at_{now_stamp()}.pdf"
         os.makedirs(save_directory, exist_ok=True)
         file_path = os.path.join(save_directory, file_name)
         with open(file_path, "wb") as f:
@@ -210,7 +212,8 @@ async def inbound_message(request: Request):
 
         if event_type == "fax.delivered":
             faxed_to = body_json["data"]["payload"]["to"]
-            logger.info(f"Fax ID {fax_id} delivered to {faxed_to} at {timestamp}")
+            # fax.delivered log line in inbound_message — drop the suffix entirely
+            logger.info(f"Fax ID {fax_id} delivered to {faxed_to}")
             logger.debug(f"Received delivery confirmation for fax ID: {fax_id}")
             # Call on_confirmed with the fax_id received from the webhook
             event_handler.on_confirmed(faxed_to, fax_id)
@@ -293,7 +296,7 @@ class FaxEventHandler:
             logger.error(f"No mapping found for confirmation number: {confirmation_number}")
             return
         file_path = os.path.join('Faxes/outbound', original_file_name)
-        new_file_name = f"Fax_{secure_filename(confirmation_number[:5])}_to_{secure_filename(faxed_to)}_at_{timestamp}_confirmed.pdf"
+        new_file_name = f"Fax_{secure_filename(confirmation_number[:5])}_to_{secure_filename(faxed_to)}_at_{now_stamp()}_confirmed.pdf"
         new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
         try:
             os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
