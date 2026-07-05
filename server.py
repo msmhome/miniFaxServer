@@ -106,9 +106,9 @@ def secure_filename(name: str) -> str:
     return name or 'file'
 
 def safe_path(directory: str, file_name: str) -> str:
-    directory = os.path.realpath(directory)
-    path = os.path.realpath(os.path.join(directory, file_name))
-    if os.path.commonpath([directory, path]) != directory:
+    base = os.path.realpath(directory)
+    path = os.path.normpath(os.path.join(base, file_name))
+    if not path.startswith(base + os.sep):
         raise ValueError(f"Unsafe file path: {file_name}")
     return path
 
@@ -302,7 +302,6 @@ class FaxEventHandler:
         if not original_file_name:
             logger.error(f"No mapping found for confirmation number: {confirmation_number}")
             return
-        file_path = os.path.join('Faxes/outbound', original_file_name)
         new_file_name = f"Fax_{secure_filename(confirmation_number[:5])}_to_{secure_filename(faxed_to)}_at_{now_stamp()}_confirmed.pdf"
         confirmations_dir = os.path.join('Faxes', 'outbound_confirmations')
         try:
