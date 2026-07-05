@@ -1,21 +1,19 @@
 import os
 import re
 import asyncio
+import shutil
 import time
-import requests
+import urllib.request
 from collections import defaultdict
-from urllib.parse import urlparse, urlsplit, urlunsplit
+from urllib.parse import urlparse
 from datetime import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
-from starlette.responses import Response
+from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 import telnyx
 from telnyx.lib.webhook_verification import verify_webhook_signature, WebhookVerificationError
 from dotenv import load_dotenv
 import uvicorn
-import bleach
 import json
 import logging
 import ipaddress
@@ -55,7 +53,8 @@ log_level = getattr(logging, log_level_str, logging.DEBUG)
 logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # Using seconds for uniqueness
+def now_stamp():
+    return datetime.now().strftime('%Y%m%d_%H%M%S')  # Using seconds for uniqueness
 
 # Read and process whitelisted IP ranges from environment variable or use default
 WHITELISTED_IP_RANGES_STR = os.getenv('WHITELISTED_IP_RANGES')
@@ -73,10 +72,6 @@ try:
         except ValueError as e:
             logger.error(f"[ERROR]:Invalid IP range '{ip}' skipped: {e}")
     logger.debug(f"Parsed WHITELISTED_IP_RANGES: {WHITELISTED_IP_RANGES}")
-
-except ipaddress.AddressValueError as e:
-    logger.debug(f"Unable to properly read whitelisted IP ranges. Are they set in environment and in proper JSON? {e}")
-    raise ValueError(f"Error decoding WHITELISTED_IP_RANGES: {e}")
 
 except json.JSONDecodeError as e:
     logger.debug(f"Unable to properly read whitelisted IP ranges. Are they set in environment and in proper JSON? {e}")
@@ -110,6 +105,13 @@ def secure_filename(name: str) -> str:
     name = name.lstrip('.')
     return name or 'file'
 
+def safe_path(directory: str, file_name: str) -> str:
+    base = os.path.realpath(directory)
+    path = os.path.normpath(os.path.join(base, file_name))
+    if not path.startswith(base + os.sep):
+        raise ValueError(f"Unsafe file path: {file_name}")
+    return path
+
 # SSRF guard for media URLs
 def is_safe_media_url(url: str) -> bool:
     try:
@@ -134,28 +136,19 @@ async def whitelist_middleware(request: Request, call_next):
         return Response(status_code=403, content="Forbidden")
     return await call_next(request)
 
-#Format for Fax In
-class FaxData(BaseModel):
-    event_type: str
-    direction: str
-    fax_id: str
-    to: str
-    from_: str = Field(alias="from")
-    media_url: str
-
-#Format for SMS In
-def sanitize_and_store(message: str, from_number: str, directory="Faxes"):
-    sanitized_message = bleach.clean(message, strip=True)
-    file_name = f"SMS_from_{secure_filename(from_number)}_at_{timestamp}.txt"
+#Store SMS In as plain text
+def store_sms(message: str, from_number: str, directory="Faxes"):
+    # store_sms / sanitize_and_store
+    file_name = f"SMS_from_{secure_filename(from_number)}_at_{now_stamp()}.txt"
     os.makedirs(directory, exist_ok=True)
-    file_path = os.path.join(directory, file_name)
-    with open(file_path, "w") as file:
-        file.write(sanitized_message)
+    with open(safe_path(directory, file_name), "w") as file:
+        file.write(message)
 
-    return sanitized_message
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
-class SmsData(BaseModel):
-    data: dict
+_url_opener = urllib.request.build_opener(_NoRedirectHandler)
 
 #Sanitize and format Fax In File
 def download_file(from_number, url, save_directory='Faxes'):
@@ -163,18 +156,15 @@ def download_file(from_number, url, save_directory='Faxes'):
         logger.error(f"Rejected unsafe media URL: {url}")
         return None
     try:
-        split_url = list(urlsplit(url))
-        split_url[1] = secure_filename(split_url[1])
-        url = urlunsplit(split_url)
-        url = url.replace("%2B", "+")
-        # don't follow redirects; raise on bad HTTP status 
-        r = requests.get(url, allow_redirects=False, timeout=30)
-        r.raise_for_status()
-        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{secure_filename(from_number)}_at_{timestamp}.pdf"
+        # redirects rejected; HTTPError raised on bad status
+        with _url_opener.open(url, timeout=30) as r:
+            content = r.read()
+        # download_file
+        file_name = f"Fax_{secure_filename(os.path.basename(urlparse(url).path)[:5])}_from_{secure_filename(from_number)}_at_{now_stamp()}.pdf"
         os.makedirs(save_directory, exist_ok=True)
         file_path = os.path.join(save_directory, file_name)
         with open(file_path, "wb") as f:
-            f.write(r.content)
+            f.write(content)
         return file_path
     except Exception as e:
         logger.error(f"An error occurred while downloading the fax file: {e}")
@@ -192,17 +182,17 @@ async def status():
     return {"status": "ONLINE"}
 
 @app.post("/sms")
-async def handle_sms(request: Request, data: SmsData):
+async def handle_sms(request: Request):
     if is_rate_limited(request.client.host): #Set SMS rate limit
         return Response(status_code=429, content="Too Many Requests")
     try:
-        message = data.data.get('payload').get('text')
-        from_number = data.data.get('payload').get('from').get('phone_number')
-        sanitized_message = sanitize_and_store(message, from_number)
-        logger.info(f"Received an SMS from {from_number}: {sanitized_message}")
-        logger.debug(f"Received an SMS from {from_number}: {'message.payload'}")
+        data = await request.json()
+        message = data['data']['payload']['text']
+        from_number = data['data']['payload']['from']['phone_number']
+        store_sms(message, from_number)
+        logger.info(f"Received an SMS from {from_number} ({len(message)} chars)")
         return Response(status_code=200)
-    except (KeyError, AttributeError, TypeError):
+    except (KeyError, AttributeError, TypeError, ValueError):
         logger.error("Incorrect incoming SMS data format received.")
         return Response(status_code=400)
     except Exception as e:
@@ -229,7 +219,8 @@ async def inbound_message(request: Request):
 
         if event_type == "fax.delivered":
             faxed_to = body_json["data"]["payload"]["to"]
-            logger.info(f"Fax ID {fax_id} delivered to {faxed_to} at {timestamp}")
+            # fax.delivered log line in inbound_message — drop the suffix entirely
+            logger.info(f"Fax ID {fax_id} delivered to {faxed_to}")
             logger.debug(f"Received delivery confirmation for fax ID: {fax_id}")
             # Call on_confirmed with the fax_id received from the webhook
             event_handler.on_confirmed(faxed_to, fax_id)
@@ -300,8 +291,6 @@ class FaxEventHandler:
             logger.debug(f"Sent fax with fax_id: {fax_id} to server")
             self.fax_id_to_file[fax_id] = file_name # Store the mapping of fax_id to file_name
             logger.debug(f"Stored mapping: {fax_id} -> {file_name}")
-            new_file_path = os.path.join('Faxes', 'outbound_confirmations', f"{fax_id}.pdf")
-            os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
             logger.debug(f"Fax sent successfully: {fax_response}")
         except Exception as e:
             logger.error(f"Failed to send fax: {str(e)}")
@@ -313,27 +302,17 @@ class FaxEventHandler:
         if not original_file_name:
             logger.error(f"No mapping found for confirmation number: {confirmation_number}")
             return
-        file_path = os.path.join('Faxes/outbound', original_file_name)
-        new_file_name = f"Fax_{secure_filename(confirmation_number[:5])}_to_{secure_filename(faxed_to)}_at_{timestamp}_confirmed.pdf"
-        new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
+        new_file_name = f"Fax_{secure_filename(confirmation_number[:5])}_to_{secure_filename(faxed_to)}_at_{now_stamp()}_confirmed.pdf"
+        confirmations_dir = os.path.join('Faxes', 'outbound_confirmations')
         try:
-            # First read the file content
-            with open(file_path, 'rb') as f_in:
-                file_content = f_in.read()
-                
-            # Then write it to the new location
-            with open(new_file_path, 'wb') as f_out:
-                f_out.write(file_content)
-                
-            # Try to remove the original file
-            try:
-                os.remove(file_path)
-                logger.info(f"Successfully moved confirmed fax to {new_file_path}")
-            except Exception as e:
-                logger.warning(f"Created copy but could not remove original file {file_path}: {str(e)}")
-                logger.info(f"Created copy of confirmed fax at {new_file_path}, but could not remove original")
+            file_path = safe_path('Faxes/outbound', original_file_name)
+            os.makedirs(confirmations_dir, exist_ok=True)
+            new_file_path = safe_path(confirmations_dir, new_file_name)
+            shutil.copyfile(file_path, new_file_path)  # data only; copystat fails on cross-mount volumes
+            os.remove(file_path)
+            logger.info(f"Successfully moved confirmed fax to {new_file_path}")
         except Exception as e:
-            logger.error(f"Failed to copy file for fax {confirmation_number}: {str(e)}")
+            logger.error(f"Failed to move file for fax {confirmation_number}: {str(e)}")
 
 if __name__ == "__main__":
     telnyx_client = telnyx.Telnyx(

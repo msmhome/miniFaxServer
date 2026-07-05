@@ -118,7 +118,7 @@ Copy `.env.example` to `.env` or load these environment values another way, then
 | TELNYX_API_KEY           | Yes          |                                                                      |
 | TELNYX_FAX_CONNECTION_ID | Yes          | Fax API App ID (from Telnyx portal)                                  |
 | TELNYX_FAX_FROM_NUMBER   | Yes          | Your Telnyx outbound fax number (format: +12015551234)               |
-| MEDIA_BASE_URL           | Yes          | Base URL for serving outbound PDFs (e.g. https://example.com/static) |
+| MEDIA_BASE_URL           | Yes          | Base URL for serving outbound PDFs (e.g. https://fax.example.com/static) |
 | HOST                     | Yes          | Host to bind the server to (e.g. 127.0.0.1)                          |
 | PORT                     | Yes          | Port to bind the server to                                           |
 | MESSAGE_PROFILE_ID       | if using SMS | Telnyx Messaging Profile ID for inbound SMS                          |

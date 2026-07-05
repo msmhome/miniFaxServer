@@ -1,4 +1,4 @@
-FROM python:3.12.10-slim-bookworm
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
@@ -10,12 +10,6 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get remove wget -y && \
     rm cloudflared-linux-amd64.deb
-
-# Create cloudflared directory for configuration
-RUN mkdir -p /etc/cloudflared
-
-# Set environment variables for cloudflared TODO: SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ENV "TUNNEL_TOKEN") (line 16)
-ENV TUNNEL_TOKEN=$TUNNEL_TOKEN
 
 WORKDIR /app
 
