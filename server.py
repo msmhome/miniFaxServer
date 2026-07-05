@@ -105,6 +105,13 @@ def secure_filename(name: str) -> str:
     name = name.lstrip('.')
     return name or 'file'
 
+def safe_path(directory: str, file_name: str) -> str:
+    directory = os.path.realpath(directory)
+    path = os.path.realpath(os.path.join(directory, file_name))
+    if os.path.commonpath([directory, path]) != directory:
+        raise ValueError(f"Unsafe file path: {file_name}")
+    return path
+
 # SSRF guard for media URLs
 def is_safe_media_url(url: str) -> bool:
     try:
@@ -134,7 +141,7 @@ def store_sms(message: str, from_number: str, directory="Faxes"):
     # store_sms / sanitize_and_store
     file_name = f"SMS_from_{secure_filename(from_number)}_at_{now_stamp()}.txt"
     os.makedirs(directory, exist_ok=True)
-    with open(os.path.join(directory, file_name), "w") as file:
+    with open(safe_path(directory, file_name), "w") as file:
         file.write(message)
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -183,7 +190,7 @@ async def handle_sms(request: Request):
         message = data['data']['payload']['text']
         from_number = data['data']['payload']['from']['phone_number']
         store_sms(message, from_number)
-        logger.info(f"Received an SMS from {from_number}: {message}")
+        logger.info(f"Received an SMS from {from_number} ({len(message)} chars)")
         return Response(status_code=200)
     except (KeyError, AttributeError, TypeError, ValueError):
         logger.error("Incorrect incoming SMS data format received.")
@@ -297,9 +304,11 @@ class FaxEventHandler:
             return
         file_path = os.path.join('Faxes/outbound', original_file_name)
         new_file_name = f"Fax_{secure_filename(confirmation_number[:5])}_to_{secure_filename(faxed_to)}_at_{now_stamp()}_confirmed.pdf"
-        new_file_path = os.path.join('Faxes', 'outbound_confirmations', new_file_name)
+        confirmations_dir = os.path.join('Faxes', 'outbound_confirmations')
         try:
-            os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
+            file_path = safe_path('Faxes/outbound', original_file_name)
+            os.makedirs(confirmations_dir, exist_ok=True)
+            new_file_path = safe_path(confirmations_dir, new_file_name)
             shutil.copyfile(file_path, new_file_path)  # data only; copystat fails on cross-mount volumes
             os.remove(file_path)
             logger.info(f"Successfully moved confirmed fax to {new_file_path}")
